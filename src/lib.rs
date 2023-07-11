@@ -280,7 +280,7 @@ fn rmain(config: &mut Config) -> Result<()> {
         let mut cmd = Command::new(&wasix_runner);
 
         if wasix_runner == "wasmer" {
-            cmd.arg("--enable-threads");
+            cmd.args(&["--enable-all", "--net", "--http-client", "--singlepass"]);
         }
 
         cmd.arg("--")
