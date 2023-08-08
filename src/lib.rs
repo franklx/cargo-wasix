@@ -8,14 +8,19 @@ use std::io;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::Duration;
 use tool_path::ToolPath;
 
 mod cache;
 mod config;
+mod dependencies;
 mod internal;
 mod tool_path;
 mod toolchain;
 mod utils;
+
+/// Timeout used by [`download`].
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub fn main() {
     // See comments in `rmain` around `*_RUNNER` for why this exists here.
@@ -169,6 +174,7 @@ fn rmain(config: &mut Config) -> Result<()> {
         .map(|runner_override| (runner_override, false))
         .unwrap_or_else(|_| ("wasmer".to_string(), true));
 
+    let mut check_deps = false;
     match subcommand {
         Subcommand::DownloadToolchain => {
             let _lock = Config::acquire_lock()?;
@@ -186,6 +192,7 @@ fn rmain(config: &mut Config) -> Result<()> {
             return Ok(());
         }
         Subcommand::Run | Subcommand::Bench | Subcommand::Test => {
+            check_deps = true;
             if !using_default {
                 // check if the override is either a valid path or command found on $PATH
                 if !(Path::new(&wasix_runner).exists() || which::which(&wasix_runner).is_ok()) {
@@ -212,20 +219,16 @@ fn rmain(config: &mut Config) -> Result<()> {
             cargo.env("__CARGO_WASIX_RUNNER_SHIM", "1");
             cargo.env(runner_env_var, env::current_exe()?);
         }
-
-        Subcommand::Build | Subcommand::Check | Subcommand::Tree | Subcommand::Fix => {}
+        Subcommand::Build | Subcommand::Check => check_deps = true,
+        Subcommand::Tree | Subcommand::Fix => {}
     }
 
-    // Offline env var disables toolchain downloads and update checks.
-    let is_offline =
-        std::env::var("CARGO_WASIX_OFFLINE").map_or(false, |v| v == "1" || v == "true");
-
-    let update_check_opt = if is_offline {
+    let update_check_opt = if config.is_offline {
         Some(internal::UpdateCheck::new(config))
     } else {
         None
     };
-    let toolchain = toolchain::ensure_toolchain(config, is64bit, is_offline)?;
+    let toolchain = toolchain::ensure_toolchain(config, is64bit)?;
 
     std::env::set_var("RUSTUP_TOOLCHAIN", &toolchain.name);
 
@@ -239,6 +242,11 @@ fn rmain(config: &mut Config) -> Result<()> {
     // Set some flags for rustc (only if RUSTFLAGS is not already set)
     if std::env::var("RUSTFLAGS").is_err() {
         env::set_var("RUSTFLAGS", "-C target-feature=+atomics");
+    }
+
+    // Check the dependencies, if needed, before running cargo.
+    if check_deps {
+        dependencies::check(config, target)?;
     }
 
     // Run the cargo commands
@@ -531,6 +539,7 @@ fn execute_cargo(cargo: &mut Command, config: &Config) -> Result<CargoBuild> {
         .capture_stdout()?;
     let metadata = serde_json::from_str::<CargoMetadata>(&metadata)
         .context("failed to deserialize `cargo metadata`")?;
+
     let manifest = Path::new(&metadata.workspace_root).join("Cargo.toml");
     let toml = fs::read_to_string(&manifest)
         .context(format!("failed to read manifest: {}", manifest.display()))?;
@@ -662,7 +671,7 @@ fn download(
     config.status("Downloading", name);
     config.verbose(|| config.status("Get", url));
 
-    let response = utils::get(url)?;
+    let response = utils::get(url, DOWNLOAD_TIMEOUT)?;
     (|| -> Result<()> {
         fs::create_dir_all(parent)
             .context(format!("failed to create directory `{}`", parent.display()))?;

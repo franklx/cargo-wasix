@@ -29,7 +29,8 @@ exclude = ['tmp', 'target']
 [dependencies]
 anyhow = { version = "1.0", features = ["backtrace"] }
 atty = "0.2"
-dirs = "5"
+cargo_metadata = "0.15"
+dirs = "3.0.1"
 flate2 = "1"
 fs2 = "0.4"
 fs_extra = "1.2.0"
