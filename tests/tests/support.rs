@@ -99,14 +99,14 @@ impl Project {
 
     pub fn debug_wasm(&self, name: &str) -> PathBuf {
         self.build_dir()
-            .join("wasm64-wasi")
+            .join("wasm32-wasmer-wasi")
             .join("debug")
             .join(format!("{}.wasm", name))
     }
 
     pub fn release_wasm(&self, name: &str) -> PathBuf {
         self.build_dir()
-            .join("wasm64-wasi")
+            .join("wasm32-wasmer-wasi")
             .join("release")
             .join(format!("{}.wasm", name))
     }
@@ -118,9 +118,11 @@ impl Project {
             .env("CARGO_HOME", self.root.join("cargo-home"));
 
         if let Some(runtime_override) = &self.runtime_override {
-            process.env("CARGO_TARGET_WASM32_WASIX_RUNNER", runtime_override);
+            process.env("CARGO_TARGET_WASM32_WASMER_WASI_RUNNER", runtime_override);
         }
 
-        return process;
+        process.arg("--color=never");
+
+        process
     }
 }
