@@ -404,7 +404,7 @@ fn build_rust(
     }
 
     let config_tpl = r#"
-changelog-seen = 2
+change-id = 125535
 
 # NOTE: can't enable because using the cached llvm prevents building rust-lld,
 # which is required for the toolchain to work.
